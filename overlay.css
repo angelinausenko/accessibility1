@@ -1,0 +1,99 @@
+/* AccessLens Overlay Styles — injected into every page */
+
+/* ── Dimmer overlay (dims everything except focused element) ── */
+#accesslens-dimmer {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 2147483640;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  #accesslens-dimmer.active {
+    opacity: 1;
+  }
+  
+  /* ── Spotlight cutout (clips out the focused element) ── */
+  #accesslens-spotlight {
+    position: fixed;
+    z-index: 2147483641;
+    pointer-events: none;
+    border: 2.5px solid #4FC3F7;
+    border-radius: 4px;
+    box-shadow:
+      0 0 0 9999px rgba(0, 0, 0, 0.55),
+      0 0 0 3px rgba(79, 195, 247, 0.4),
+      0 4px 24px rgba(79, 195, 247, 0.3);
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0;
+  }
+  #accesslens-spotlight.active {
+    opacity: 1;
+  }
+  
+  /* ── ARIA tooltip ── */
+  #accesslens-tooltip {
+    position: fixed;
+    z-index: 2147483647;
+    background: #0D1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 10px 13px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #c9d1d9;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    max-width: 280px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  #accesslens-tooltip.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  #accesslens-tooltip .tt-row { display: flex; gap: 8px; align-items: baseline; margin: 1px 0; }
+  #accesslens-tooltip .tt-key { color: #58a6ff; font-weight: 600; min-width: 46px; font-size: 10px; }
+  #accesslens-tooltip .tt-val { color: #e6edf3; }
+  #accesslens-tooltip .tt-none { color: #484f58; font-style: italic; }
+  #accesslens-tooltip .tt-divider { border: none; border-top: 1px solid #21262d; margin: 5px 0; }
+  #accesslens-tooltip .tt-state { display: inline-block; font-size: 9px; padding: 1px 6px; border-radius: 10px; margin-right: 3px; font-weight: 600; }
+  #accesslens-tooltip .tt-state.on  { background: #1f4a1f; color: #56d364; }
+  #accesslens-tooltip .tt-state.off { background: #3d1a1a; color: #f85149; }
+  
+  /* ── Issue highlight boxes (painted on elements with violations) ── */
+  .accesslens-issue-marker {
+    position: absolute;
+    pointer-events: none;
+    z-index: 2147483630;
+    border-radius: 3px;
+    border-width: 2px;
+    border-style: solid;
+  }
+  .accesslens-issue-marker.error   { border-color: #f85149; background: rgba(248,81,73,0.08); }
+  .accesslens-issue-marker.warning { border-color: #e3b341; background: rgba(227,179,65,0.08); }
+  
+  /* ── Focus lost warning banner ── */
+  #accesslens-focus-alert {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-80px);
+    z-index: 2147483645;
+    background: #f85149;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 18px;
+    border-radius: 20px;
+    box-shadow: 0 4px 20px rgba(248,81,73,0.4);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+  }
+  #accesslens-focus-alert.show {
+    transform: translateX(-50%) translateY(0);
+  }

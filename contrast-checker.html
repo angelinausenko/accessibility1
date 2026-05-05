@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AccessLens – Color Contrast Checker</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f4f4f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      border: 1px solid #e0e0e0;
+      width: 100%;
+      max-width: 480px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid #eee;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .logo-icon {
+      width: 32px; height: 32px; border-radius: 7px;
+      background: #185FA5;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-icon svg { width: 18px; height: 18px; }
+    .card-title { font-size: 16px; font-weight: 700; }
+    .card-sub { font-size: 11px; color: #888; }
+
+    .pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 20px 24px 0; }
+    .picker-group label { font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.04em; display: block; margin-bottom: 6px; }
+    .picker-row {
+      display: flex; align-items: center; gap: 8px;
+      border: 1px solid #ddd; border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .picker-row input[type="color"] {
+      width: 28px; height: 28px;
+      border: none; border-radius: 5px; cursor: pointer; padding: 0;
+      background: none;
+    }
+    .picker-row input[type="text"] {
+      flex: 1; border: none; outline: none;
+      font-size: 13px; font-family: monospace; background: none;
+    }
+
+    .preview {
+      margin: 20px 24px 0;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid #eee;
+    }
+    .preview-box {
+      padding: 24px 20px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .preview-large { font-size: 24px; font-weight: 700; }
+    .preview-normal { font-size: 16px; }
+    .preview-small { font-size: 13px; color: inherit; opacity: 0.85; }
+    .preview-ui {
+      padding: 10px 16px;
+      display: flex; gap: 8px; align-items: center;
+      border-top: 1px solid rgba(0,0,0,0.08);
+    }
+    .preview-badge {
+      font-size: 11px; font-weight: 600;
+      padding: 3px 10px; border-radius: 20px;
+    }
+    .preview-link { font-size: 13px; text-decoration: underline; cursor: pointer; }
+
+    /* Result */
+    .result { padding: 16px 24px 4px; }
+    .ratio-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+    .ratio-num { font-size: 36px; font-weight: 800; }
+    .ratio-label { font-size: 13px; color: #666; }
+    .levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+    .level {
+      border-radius: 8px; padding: 10px 8px; text-align: center;
+      border: 1px solid #eee;
+    }
+    .level.pass { background: #EAF3DE; border-color: #9FE1CB; }
+    .level.fail { background: #FCEBEB; border-color: #F5C4B3; }
+    .level-name { font-size: 11px; font-weight: 700; color: #444; }
+    .level-req { font-size: 10px; color: #888; margin-top: 2px; }
+    .level-status { font-size: 11px; font-weight: 700; margin-top: 4px; }
+    .level.pass .level-status { color: #0F6E56; }
+    .level.fail .level-status { color: #A32D2D; }
+
+    .suggestion { padding: 0 24px 16px; }
+    .suggest-title { font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+    .suggest-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+    .swatch {
+      width: 32px; height: 32px; border-radius: 6px;
+      border: 1px solid rgba(0,0,0,0.12);
+      cursor: pointer; transition: transform 0.1s;
+    }
+    .swatch:hover { transform: scale(1.15); }
+
+    .divider { height: 1px; background: #eee; margin: 4px 0; }
+    .footer { padding: 12px 24px; font-size: 11px; color: #aaa; text-align: center; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="card-header">
+    <div class="logo-icon">
+      <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="8" cy="4" r="2" fill="white"/>
+        <path d="M8 7L5 13M8 7L11 13M5 9H11" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="card-title">Contrast Checker</div>
+      <div class="card-sub">AccessLens · WCAG 2.2 AA/AAA</div>
+    </div>
+  </div>
+
+  <div class="pickers">
+    <div class="picker-group">
+      <label>Foreground (text)</label>
+      <div class="picker-row">
+        <input type="color" id="fgPicker" value="#1a1a2e" />
+        <input type="text" id="fgHex" value="#1a1a2e" maxlength="9" spellcheck="false" />
+      </div>
+    </div>
+    <div class="picker-group">
+      <label>Background</label>
+      <div class="picker-row">
+        <input type="color" id="bgPicker" value="#ffffff" />
+        <input type="text" id="bgHex" value="#ffffff" maxlength="9" spellcheck="false" />
+      </div>
+    </div>
+  </div>
+
+  <div class="preview">
+    <div class="preview-box" id="previewBox">
+      <div class="preview-large" id="prevLarge">Large text (24px / bold 18px)</div>
+      <div class="preview-normal" id="prevNormal">Normal body text at 16px</div>
+      <div class="preview-small" id="prevSmall">Small UI text at 13px · caption · label</div>
+    </div>
+    <div class="preview-ui" id="previewUI">
+      <span class="preview-badge" id="prevBadge">Badge</span>
+      <span class="preview-link" id="prevLink">Hyperlink text</span>
+    </div>
+  </div>
+
+  <div class="result">
+    <div class="ratio-row">
+      <span class="ratio-num" id="ratioNum">—</span>
+      <span class="ratio-label">contrast ratio</span>
+    </div>
+    <div class="levels">
+      <div class="level" id="lvlAA">
+        <div class="level-name">AA</div>
+        <div class="level-req">4.5:1</div>
+        <div class="level-status" id="lvlAAStatus">—</div>
+      </div>
+      <div class="level" id="lvlAAA">
+        <div class="level-name">AAA</div>
+        <div class="level-req">7.0:1</div>
+        <div class="level-status" id="lvlAAAStatus">—</div>
+      </div>
+      <div class="level" id="lvlAALg">
+        <div class="level-name">AA Large</div>
+        <div class="level-req">3.0:1</div>
+        <div class="level-status" id="lvlAALgStatus">—</div>
+      </div>
+      <div class="level" id="lvlAAALg">
+        <div class="level-name">AAA Large</div>
+        <div class="level-req">4.5:1</div>
+        <div class="level-status" id="lvlAAALgStatus">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="suggestion" id="suggestionArea" style="display:none">
+    <div class="suggest-title">Compliant foreground suggestions (AA)</div>
+    <div class="suggest-swatches" id="swatches"></div>
+  </div>
+
+  <div class="divider"></div>
+  <div class="footer">Click a swatch to apply it as foreground color</div>
+</div>
+
+<script>
+  function hexToRgb(hex) {
+    hex = hex.replace(/^#/, "");
+    if (hex.length === 3) hex = hex.split("").map(c => c + c).join("");
+    const n = parseInt(hex, 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+
+  function rgbToHex({ r, g, b }) {
+    return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+  }
+
+  function luminance({ r, g, b }) {
+    return [r, g, b].reduce((acc, v, i) => {
+      const s = v / 255;
+      const lin = s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      return acc + lin * [0.2126, 0.7152, 0.0722][i];
+    }, 0);
+  }
+
+  function contrast(fg, bg) {
+    const L1 = luminance(fg), L2 = luminance(bg);
+    return (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+  }
+
+  function generateSuggestions(bg, targetRatio) {
+    const suggestions = [];
+    const candidates = [
+      "#000000","#111111","#1a1a1a","#222222","#333333","#444444",
+      "#ffffff","#f5f5f5","#eeeeee","#dddddd",
+      "#185FA5","#0C447C","#042C53",
+      "#0F6E56","#085041","#04342C",
+      "#A32D2D","#791F1F","#501313",
+      "#854F0B","#633806","#412402"
+    ];
+    const bgRgb = hexToRgb(bg);
+    candidates.forEach(c => {
+      try {
+        const ratio = contrast(hexToRgb(c), bgRgb);
+        if (ratio >= targetRatio) suggestions.push({ hex: c, ratio });
+      } catch {}
+    });
+    return suggestions.slice(0, 8);
+  }
+
+  function isValidHex(h) { return /^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{6}$/.test(h); }
+
+  let fgColor = "#1a1a2e";
+  let bgColor = "#ffffff";
+
+  function update() {
+    if (!isValidHex(fgColor) || !isValidHex(bgColor)) return;
+    const fg = hexToRgb(fgColor);
+    const bg = hexToRgb(bgColor);
+    const ratio = contrast(fg, bg);
+
+    // Preview
+    document.getElementById("previewBox").style.background = bgColor;
+    document.getElementById("previewBox").style.color = fgColor;
+    document.getElementById("previewUI").style.background = bgColor;
+    document.getElementById("prevBadge").style.background = fgColor;
+    document.getElementById("prevBadge").style.color = bgColor;
+    document.getElementById("prevLink").style.color = fgColor;
+
+    // Ratio
+    document.getElementById("ratioNum").textContent = ratio.toFixed(2) + ":1";
+
+    // Levels
+    function setLevel(id, statusId, required) {
+      const el = document.getElementById(id);
+      const st = document.getElementById(statusId);
+      const ok = ratio >= required;
+      el.className = "level " + (ok ? "pass" : "fail");
+      st.textContent = ok ? "Pass" : "Fail";
+    }
+    setLevel("lvlAA", "lvlAAStatus", 4.5);
+    setLevel("lvlAAA", "lvlAAAStatus", 7.0);
+    setLevel("lvlAALg", "lvlAALgStatus", 3.0);
+    setLevel("lvlAAALg", "lvlAAALgStatus", 4.5);
+
+    // Suggestions if failing AA
+    const suggArea = document.getElementById("suggestionArea");
+    if (ratio < 4.5) {
+      const suggestions = generateSuggestions(bgColor, 4.5);
+      const swatches = document.getElementById("swatches");
+      swatches.innerHTML = suggestions.map(s =>
+        `<div class="swatch" title="${s.hex} (${s.ratio.toFixed(1)}:1)"
+              style="background:${s.hex}"
+              data-hex="${s.hex}"></div>`
+      ).join("");
+      swatches.querySelectorAll(".swatch").forEach(sw => {
+        sw.addEventListener("click", () => {
+          fgColor = sw.dataset.hex;
+          document.getElementById("fgPicker").value = fgColor;
+          document.getElementById("fgHex").value = fgColor;
+          update();
+        });
+      });
+      suggArea.style.display = "block";
+    } else {
+      suggArea.style.display = "none";
+    }
+  }
+
+  // Wire up pickers and text inputs
+  function wirePair(pickerId, hexId, getter, setter) {
+    const picker = document.getElementById(pickerId);
+    const hex = document.getElementById(hexId);
+    picker.addEventListener("input", () => {
+      setter(picker.value);
+      hex.value = picker.value;
+      update();
+    });
+    hex.addEventListener("input", () => {
+      const v = hex.value.startsWith("#") ? hex.value : "#" + hex.value;
+      if (isValidHex(v)) {
+        setter(v);
+        picker.value = v;
+        update();
+      }
+    });
+  }
+
+  wirePair("fgPicker", "fgHex", () => fgColor, v => { fgColor = v; });
+  wirePair("bgPicker", "bgHex", () => bgColor, v => { bgColor = v; });
+
+  // Initial
+  update();
+</script>
+</body>
+</html>
