@@ -14,6 +14,15 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+function withChromeApi(action) {
+  try {
+    if (!chrome?.runtime?.id) return null;
+    return action(chrome);
+  } catch (_) {
+    return null;
+  }
+}
+
 export default function App() {
   const [result, setResult] = useState(initialResult);
   const [currentFilter, setCurrentFilter] = useState("all");
@@ -25,19 +34,19 @@ export default function App() {
   const [openIssues, setOpenIssues] = useState({});
 
   useEffect(() => {
-    chrome.storage.local.get("auditResult", (data) => {
-      if (data.auditResult) setResult(data.auditResult);
-    });
+    withChromeApi((c) => c.storage.local.get("auditResult", (data) => {
+      if (data?.auditResult) setResult(data.auditResult);
+    }));
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (!tabs[0]) return;
+    withChromeApi((c) => c.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs?.[0]) return;
       try {
         const u = new URL(tabs[0].url);
         setPageUrl(u.hostname + u.pathname);
       } catch {
         setPageUrl(tabs[0].url || "—");
       }
-    });
+    }));
   }, []);
 
   useEffect(() => {
@@ -64,44 +73,50 @@ export default function App() {
   function runScan() {
     setError("");
     setIsScanning(true);
-    chrome.runtime.sendMessage({ type: "RUN_AUDIT" }, (response) => {
+    const started = withChromeApi((c) => c.runtime.sendMessage({ type: "RUN_AUDIT" }, (response) => {
       finishProgress();
       setIsScanning(false);
 
-      if (chrome.runtime.lastError || !response || response.error) {
+      if (c.runtime.lastError || !response || response.error) {
         setError(response?.error || "Could not run audit. Try refreshing the page.");
         return;
       }
       setResult(response.result);
       setOpenIssues({});
       setCurrentFilter("all");
-    });
+    }));
+
+    if (started === null) {
+      finishProgress();
+      setIsScanning(false);
+      setError("Extension context invalidated. Reload extension and page.");
+    }
   }
 
   function toggleOverlayMode() {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const started = withChromeApi((c) => c.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0];
       if (!tab || !tab.id) {
         setError("No active tab found.");
         return;
       }
       const nextState = !overlayActive;
-      chrome.scripting.executeScript(
+      c.scripting.executeScript(
         { target: { tabId: tab.id }, files: ["content.js"] },
         () => {
-          if (chrome.runtime.lastError) {
+          if (c.runtime.lastError) {
             setError("This page does not allow overlay injection.");
             return;
           }
-          chrome.scripting.insertCSS(
+          c.scripting.insertCSS(
             { target: { tabId: tab.id }, files: ["overlay.css"] },
             () => {
-              if (chrome.runtime.lastError) {
+              if (c.runtime.lastError) {
                 setError("Could not load overlay styles on this page.");
                 return;
               }
-              chrome.tabs.sendMessage(tab.id, { type: "TOGGLE_OVERLAY", active: nextState }, (response) => {
-                if (chrome.runtime.lastError || !response?.ok) {
+              c.tabs.sendMessage(tab.id, { type: "TOGGLE_OVERLAY", active: nextState }, (response) => {
+                if (c.runtime.lastError || !response?.ok) {
                   setError("Could not toggle SR overlay on this page.");
                   return;
                 }
@@ -112,7 +127,11 @@ export default function App() {
           );
         }
       );
-    });
+    }));
+
+    if (started === null) {
+      setError("Extension context invalidated. Reload extension and page.");
+    }
   }
 
   const filteredIssues = useMemo(() => {

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   plugins: [react()],
+  base: "./",
   root: resolve(__dirname, "popup-react"),
   build: {
     outDir: resolve(__dirname, "popup-dist"),

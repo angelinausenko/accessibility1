@@ -68,6 +68,16 @@
   const issues = [];
   let passCount = 0;
 
+  function withStorageLocal(action) {
+    try {
+      if (!chrome?.runtime?.id || !chrome?.storage?.local) return null;
+      return action(chrome.storage.local);
+    } catch (_) {
+      // Happens when extension reload invalidates old content-script context.
+      return null;
+    }
+  }
+
   function fail(id, wcag, type, title, description, selector, fix) {
     issues.push({ id, wcag, type, title, description, selector, fix });
   }
@@ -482,7 +492,7 @@
       scannedAt: new Date().toISOString(),
       score, errors, warnings, passes: passCount, issues,
     };
-    chrome.storage.local.set({ auditResult: result });
+    withStorageLocal((storage) => storage.set({ auditResult: result }));
     return result;
   }
 
@@ -513,9 +523,9 @@
       const lostToBody = !active || active === document.body || active === document.documentElement;
       if (lostToBody && lastInteractedEl) {
         showFocusAlert('Focus lost — expected return to trigger element');
-        chrome.storage.local.get('auditResult', data => {
-          if (!data.auditResult) return;
-          const existing = data.auditResult;
+        withStorageLocal((storage) => storage.get('auditResult', data => {
+          const existing = data?.auditResult;
+          if (!existing || !Array.isArray(existing.issues)) return;
           const already = existing.issues.find(i => i.id === 'focus-lost');
           if (!already) {
             existing.issues.unshift({
@@ -525,11 +535,11 @@
               selector: lastInteractedEl.tagName.toLowerCase() + (lastInteractedEl.className ? '.' + [...lastInteractedEl.classList].join('.') : ''),
               fix: 'When closing a modal or removing an element, programmatically return focus to the trigger element: triggerEl.focus().'
             });
-            existing.errors++;
-            existing.score = Math.max(0, existing.score - 8);
-            chrome.storage.local.set({ auditResult: existing });
+            existing.errors = Number(existing.errors || 0) + 1;
+            existing.score = Math.max(0, Number(existing.score || 100) - 8);
+            withStorageLocal((innerStorage) => innerStorage.set({ auditResult: existing }));
           }
-        });
+        }));
       }
     }, 150);
   }, true);
@@ -748,18 +758,24 @@
   // MESSAGE LISTENER (from popup / background)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg.type === 'RUN_AUDIT') {
-      const result = runAudit();
-      sendResponse({ result });
+  try {
+    if (chrome?.runtime?.onMessage) {
+      chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+        if (msg.type === 'RUN_AUDIT') {
+          const result = runAudit();
+          sendResponse({ result });
+        }
+        if (msg.type === 'TOGGLE_OVERLAY') {
+          if (msg.active) activateOverlay();
+          else deactivateOverlay();
+          sendResponse({ ok: true });
+        }
+        return true;
+      });
     }
-    if (msg.type === 'TOGGLE_OVERLAY') {
-      if (msg.active) activateOverlay();
-      else deactivateOverlay();
-      sendResponse({ ok: true });
-    }
-    return true;
-  });
+  } catch (_) {
+    // Ignore invalidated extension context in stale page scripts.
+  }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
   function escHTML(str) {
