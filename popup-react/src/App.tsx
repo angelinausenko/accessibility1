@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import type { AuditResult, AuditResultFilter, RunAuditResponse } from "./types/audit";
 
-const initialResult = null;
+const initialResult: AuditResult | null = null;
 
-function esc(str) {
+const FILTER_TABS: readonly AuditResultFilter[] = ["all", "error", "warning", "pass"];
+
+function esc(str: string | undefined | null): string {
   return (str || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -10,43 +13,47 @@ function esc(str) {
     .replace(/"/g, "&quot;");
 }
 
-function capitalize(str) {
+function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-function withChromeApi(action) {
+function withChromeApi<T>(action: (api: typeof chrome) => T): T | null {
   try {
     if (!chrome?.runtime?.id) return null;
     return action(chrome);
-  } catch (_) {
+  } catch {
     return null;
   }
 }
 
 export default function App() {
-  const [result, setResult] = useState(initialResult);
-  const [currentFilter, setCurrentFilter] = useState("all");
+  const [result, setResult] = useState<AuditResult | null>(initialResult);
+  const [currentFilter, setCurrentFilter] = useState<AuditResultFilter>("all");
   const [overlayActive, setOverlayActive] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [pageUrl, setPageUrl] = useState("—");
-  const [openIssues, setOpenIssues] = useState({});
+  const [openIssues, setOpenIssues] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
-    withChromeApi((c) => c.storage.local.get("auditResult", (data) => {
-      if (data?.auditResult) setResult(data.auditResult);
-    }));
+    withChromeApi((c) =>
+      c.storage.local.get("auditResult", (data: { auditResult?: AuditResult }) => {
+        if (data?.auditResult) setResult(data.auditResult);
+      })
+    );
 
-    withChromeApi((c) => c.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (!tabs?.[0]) return;
-      try {
-        const u = new URL(tabs[0].url);
-        setPageUrl(u.hostname + u.pathname);
-      } catch {
-        setPageUrl(tabs[0].url || "—");
-      }
-    }));
+    withChromeApi((c) =>
+      c.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs?.[0]) return;
+        try {
+          const u = new URL(tabs[0].url ?? "");
+          setPageUrl(u.hostname + u.pathname);
+        } catch {
+          setPageUrl(tabs[0].url || "—");
+        }
+      })
+    );
   }, []);
 
   useEffect(() => {
@@ -73,18 +80,22 @@ export default function App() {
   function runScan() {
     setError("");
     setIsScanning(true);
-    const started = withChromeApi((c) => c.runtime.sendMessage({ type: "RUN_AUDIT" }, (response) => {
-      finishProgress();
-      setIsScanning(false);
+    const started = withChromeApi((c) =>
+      c.runtime.sendMessage({ type: "RUN_AUDIT" }, (response: RunAuditResponse | undefined) => {
+        finishProgress();
+        setIsScanning(false);
 
-      if (c.runtime.lastError || !response || response.error) {
-        setError(response?.error || "Could not run audit. Try refreshing the page.");
-        return;
-      }
-      setResult(response.result);
-      setOpenIssues({});
-      setCurrentFilter("all");
-    }));
+        if (c.runtime.lastError || !response || response.error) {
+          setError(response?.error || "Could not run audit. Try refreshing the page.");
+          return;
+        }
+        if (response.result) {
+          setResult(response.result);
+          setOpenIssues({});
+          setCurrentFilter("all");
+        }
+      })
+    );
 
     if (started === null) {
       finishProgress();
@@ -94,40 +105,37 @@ export default function App() {
   }
 
   function toggleOverlayMode() {
-    const started = withChromeApi((c) => c.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const tab = tabs[0];
-      if (!tab || !tab.id) {
-        setError("No active tab found.");
-        return;
-      }
-      const nextState = !overlayActive;
-      c.scripting.executeScript(
-        { target: { tabId: tab.id }, files: ["content.js"] },
-        () => {
+    const started = withChromeApi((c) =>
+      c.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs[0];
+        if (!tab || !tab.id) {
+          setError("No active tab found.");
+          return;
+        }
+        const tabId = tab.id;
+        const nextState = !overlayActive;
+        c.scripting.executeScript({ target: { tabId }, files: ["content.js"] }, () => {
           if (c.runtime.lastError) {
             setError("This page does not allow overlay injection.");
             return;
           }
-          c.scripting.insertCSS(
-            { target: { tabId: tab.id }, files: ["overlay.css"] },
-            () => {
-              if (c.runtime.lastError) {
-                setError("Could not load overlay styles on this page.");
+          c.scripting.insertCSS({ target: { tabId }, files: ["overlay.css"] }, () => {
+            if (c.runtime.lastError) {
+              setError("Could not load overlay styles on this page.");
+              return;
+            }
+            c.tabs.sendMessage(tabId, { type: "TOGGLE_OVERLAY", active: nextState }, (response: { ok?: boolean } | undefined) => {
+              if (c.runtime.lastError || !response?.ok) {
+                setError("Could not toggle SR overlay on this page.");
                 return;
               }
-              c.tabs.sendMessage(tab.id, { type: "TOGGLE_OVERLAY", active: nextState }, (response) => {
-                if (c.runtime.lastError || !response?.ok) {
-                  setError("Could not toggle SR overlay on this page.");
-                  return;
-                }
-                setError("");
-                setOverlayActive(nextState);
-              });
-            }
-          );
-        }
-      );
-    }));
+              setError("");
+              setOverlayActive(nextState);
+            });
+          });
+        });
+      })
+    );
 
     if (started === null) {
       setError("Extension context invalidated. Reload extension and page.");
@@ -135,7 +143,7 @@ export default function App() {
   }
 
   const filteredIssues = useMemo(() => {
-    const issues = result?.issues || [];
+    const issues = result?.issues ?? [];
     if (currentFilter === "all") return issues;
     if (currentFilter === "pass") return [];
     return issues.filter((i) => i.type === currentFilter);
@@ -147,7 +155,7 @@ export default function App() {
       all: result.issues.length,
       error: result.errors,
       warning: result.warnings,
-      pass: result.passes
+      pass: result.passes,
     };
   }, [result]);
 
@@ -197,7 +205,9 @@ export default function App() {
         <div className="empty">
           <div className="empty-icon">🔍</div>
           <div className="empty-title">No audit yet</div>
-          <div className="empty-desc">Click <strong>Scan page</strong> to run a full WCAG 2.2 accessibility audit on the current page.</div>
+          <div className="empty-desc">
+            Click <strong>Scan page</strong> to run a full WCAG 2.2 accessibility audit on the current page.
+          </div>
         </div>
       ) : (
         <div id="results">
@@ -207,7 +217,9 @@ export default function App() {
               <div className="score-sub">/ 100</div>
             </div>
             <div className="score-info">
-              <div className="score-title">{result.score >= 80 ? "Good accessibility" : result.score >= 50 ? "Needs improvement" : "Poor accessibility"}</div>
+              <div className="score-title">
+                {result.score >= 80 ? "Good accessibility" : result.score >= 50 ? "Needs improvement" : "Poor accessibility"}
+              </div>
               <div className="score-desc">
                 {result.errors === 0 ? "No errors found — check warnings" : `${result.errors} error(s) blocking full compliance`}
               </div>
@@ -216,13 +228,22 @@ export default function App() {
           </div>
 
           <div className="stats">
-            <div className="stat"><div className="stat-num err">{result.errors}</div><div className="stat-lbl">Errors</div></div>
-            <div className="stat"><div className="stat-num warn">{result.warnings}</div><div className="stat-lbl">Warnings</div></div>
-            <div className="stat"><div className="stat-num pass">{result.passes}</div><div className="stat-lbl">Passing</div></div>
+            <div className="stat">
+              <div className="stat-num err">{result.errors}</div>
+              <div className="stat-lbl">Errors</div>
+            </div>
+            <div className="stat">
+              <div className="stat-num warn">{result.warnings}</div>
+              <div className="stat-lbl">Warnings</div>
+            </div>
+            <div className="stat">
+              <div className="stat-num pass">{result.passes}</div>
+              <div className="stat-lbl">Passing</div>
+            </div>
           </div>
 
           <div className="tabs">
-            {["all", "error", "warning", "pass"].map((filter) => (
+            {FILTER_TABS.map((filter) => (
               <button
                 key={filter}
                 className={`tab ${currentFilter === filter ? "active" : ""}`}
@@ -235,13 +256,17 @@ export default function App() {
 
           <div className="issues-list">
             {currentFilter === "pass" ? (
-              <div className="empty compact"><div className="empty-desc">{result.passes} checks passed. Great work!</div></div>
+              <div className="empty compact">
+                <div className="empty-desc">{result.passes} checks passed. Great work!</div>
+              </div>
             ) : filteredIssues.length === 0 ? (
-              <div className="empty compact"><div className="empty-desc">No {currentFilter}s found.</div></div>
+              <div className="empty compact">
+                <div className="empty-desc">No {currentFilter}s found.</div>
+              </div>
             ) : (
               filteredIssues.map((iss, idx) => (
                 <div
-                  key={`${iss.id || iss.wcag}-${idx}`}
+                  key={`${iss.id ?? iss.wcag}-${idx}`}
                   className={`issue ${openIssues[idx] ? "open" : ""}`}
                   role="button"
                   tabIndex={0}
@@ -259,7 +284,7 @@ export default function App() {
                     <span className="issue-wcag">{iss.wcag}</span>
                   </div>
                   <div className="issue-desc">{iss.description}</div>
-                  <div className="issue-element" dangerouslySetInnerHTML={{ __html: esc(iss.element) }} />
+                  <div className="issue-element" dangerouslySetInnerHTML={{ __html: esc(iss.element ?? iss.selector) }} />
                   <div className="issue-fix">Fix: {iss.fix}</div>
                 </div>
               ))

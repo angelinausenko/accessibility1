@@ -452,6 +452,173 @@
     if (invalid > 0) fail('aria-invalid', '4.1.1', 'error', 'Invalid ARIA roles', `${invalid} element(s) use unrecognised role values.`, `[role] invalid — ${invalid}`, 'Use only valid WAI-ARIA roles.');
   }
 
+  function auditKeyboardNavigation() {
+    const candidates = Array.from(document.querySelectorAll('a, button, input, textarea, select, [tabindex], [onclick]'))
+      .filter(isVisible)
+      .slice(0, 250);
+
+    let notFocusable = 0;
+    let positiveTabindex = 0;
+    candidates.forEach(el => {
+      const tabindexAttr = el.getAttribute('tabindex');
+      const tabindex = tabindexAttr === null ? null : parseInt(tabindexAttr, 10);
+      if (Number.isFinite(tabindex) && tabindex > 0) positiveTabindex++;
+
+      if (!isKeyboardFocusable(el)) notFocusable++;
+      else pass();
+    });
+
+    if (notFocusable > 0) {
+      fail('keyboard-not-focusable', '2.1.1', 'error',
+        'Interactive elements not keyboard-focusable',
+        `${notFocusable} interactive element(s) cannot be reached with keyboard navigation.`,
+        'a, button, input, textarea, select, [tabindex], [onclick]',
+        'Use native interactive elements or add tabindex="0" and keyboard handlers (Enter/Space) where appropriate.'
+      );
+    }
+
+    if (positiveTabindex > 0) {
+      fail('keyboard-positive-tabindex', '2.4.3', 'warning',
+        'Positive tabindex values detected',
+        `${positiveTabindex} element(s) use tabindex greater than 0, which can create confusing focus order.`,
+        '[tabindex]:not([tabindex="-1"]):not([tabindex="0"])',
+        'Avoid positive tabindex. Keep DOM order logical and use tabindex="0" only when needed.'
+      );
+    } else if (notFocusable === 0 && candidates.length > 0) {
+      pass();
+    }
+  }
+
+  function auditButtonAccessibility() {
+    const buttons = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], input[type="reset"]'))
+      .filter(isVisible)
+      .slice(0, 150);
+    let namelessButtons = 0;
+    buttons.forEach(el => {
+      if (!hasAccessibleName(el)) namelessButtons++;
+      else pass();
+    });
+
+    const clickableDivSpan = Array.from(document.querySelectorAll('div[onclick], span[onclick]'))
+      .filter(isVisible)
+      .slice(0, 150);
+    let nonSemanticButtons = 0;
+    clickableDivSpan.forEach(el => {
+      if ((el.getAttribute('role') || '').toLowerCase() !== 'button') nonSemanticButtons++;
+      else pass();
+    });
+
+    if (namelessButtons > 0) {
+      fail('button-no-name', '4.1.2', 'error',
+        'Buttons without accessible name',
+        `${namelessButtons} button element(s) have no accessible name for assistive technologies.`,
+        'button, input[type="button"], input[type="submit"], input[type="reset"]',
+        'Provide visible text, aria-label, or aria-labelledby for every button.'
+      );
+    }
+
+    if (nonSemanticButtons > 0) {
+      fail('button-nonsemantic-click', '4.1.2', 'warning',
+        'Clickable div/span missing button semantics',
+        `${nonSemanticButtons} clickable div/span element(s) do not expose role="button".`,
+        'div[onclick], span[onclick]',
+        'Use <button> where possible, or add role="button", tabindex="0", and keyboard support.'
+      );
+    } else if (namelessButtons === 0 && (buttons.length > 0 || clickableDivSpan.length > 0)) {
+      pass();
+    }
+  }
+
+  function auditTables() {
+    const tables = Array.from(document.querySelectorAll('table')).filter(isVisible).slice(0, 60);
+    let noHeaders = 0;
+    let missingScope = 0;
+    tables.forEach(table => {
+      const ths = Array.from(table.querySelectorAll('th'));
+      if (ths.length === 0) {
+        noHeaders++;
+        return;
+      }
+      pass();
+      ths.forEach(th => {
+        const scope = (th.getAttribute('scope') || '').trim().toLowerCase();
+        if (!scope) missingScope++;
+        else pass();
+      });
+    });
+
+    if (noHeaders > 0) {
+      fail('table-no-headers', '1.3.1', 'error',
+        'Table missing header cells',
+        `${noHeaders} table(s) have no <th> headers, making row/column relationships unclear.`,
+        'table:not(:has(th))',
+        'Add <th> elements for header cells and associate data cells correctly.'
+      );
+    }
+
+    if (missingScope > 0) {
+      fail('table-th-scope-missing', '1.3.1', 'warning',
+        'Table headers missing scope',
+        `${missingScope} <th> element(s) are missing the scope attribute.`,
+        'th:not([scope])',
+        'Add scope="col" or scope="row" to header cells.'
+      );
+    } else if (tables.length > 0 && noHeaders === 0) {
+      pass();
+    }
+  }
+
+  function auditClickableSemantics() {
+    const rolelessOnclick = Array.from(document.querySelectorAll('[onclick]'))
+      .filter(el => isVisible(el) && !isSemanticallyInteractive(el) && !hasSemanticRole(el))
+      .slice(0, 180);
+    const pointerOnly = Array.from(document.querySelectorAll('div, span, p, li, section, article'))
+      .filter(el => {
+        if (!isVisible(el) || isSemanticallyInteractive(el) || hasSemanticRole(el)) return false;
+        return getComputedStyle(el).cursor === 'pointer';
+      })
+      .slice(0, 180);
+
+    if (rolelessOnclick.length > 0) {
+      fail('clickable-no-semantics', '4.1.2', 'error',
+        'Clickable elements without semantic role',
+        `${rolelessOnclick.length} element(s) use onclick without semantic role or native interactive semantics.`,
+        '[onclick] without role/semantic control',
+        'Use semantic controls (<button>/<a>) or add appropriate role and keyboard interaction.'
+      );
+    }
+    if (pointerOnly.length > 0) {
+      fail('pointer-no-semantics', '4.1.2', 'warning',
+        'Pointer-style elements may be non-interactive',
+        `${pointerOnly.length} element(s) use cursor:pointer but are not semantic interactive controls.`,
+        'Elements with cursor:pointer but no interactive semantics',
+        'Reserve cursor:pointer for true controls and provide proper semantic roles if interactive.'
+      );
+    } else if (rolelessOnclick.length === 0) {
+      pass();
+    }
+  }
+
+  function auditSkipLink() {
+    const links = Array.from(document.querySelectorAll('a[href^="#"]'));
+    const skipLink = links.find(a => {
+      const href = (a.getAttribute('href') || '').trim().toLowerCase();
+      const text = (a.textContent || '').trim().toLowerCase();
+      return href.startsWith('#') && (text.includes('skip') || href === '#main' || href === '#content' || href === '#main-content');
+    });
+
+    if (!skipLink) {
+      fail('skip-link-missing', '2.4.1', 'warning',
+        'No skip-to-content link found',
+        'No in-page skip link was detected (for example href="#main"). Keyboard users benefit from a shortcut to main content.',
+        'a[href^="#main"], a[href^="#content"], links containing "skip"',
+        'Add a visible-on-focus "Skip to main content" link targeting the main content region.'
+      );
+      return;
+    }
+    pass();
+  }
+
   // ── Helper: is element visible? ────────────────────────────────────────────
   function isVisible(el) {
     if (!el) return false;
@@ -459,6 +626,52 @@
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
     const rect = el.getBoundingClientRect();
     return rect.width > 0 || rect.height > 0;
+  }
+
+  function isDisabled(el) {
+    return el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true';
+  }
+
+  function isKeyboardFocusable(el) {
+    if (!el || isDisabled(el)) return false;
+    const tag = el.tagName;
+    const tabindexAttr = el.getAttribute('tabindex');
+    if (tabindexAttr !== null) {
+      const tabindex = parseInt(tabindexAttr, 10);
+      if (Number.isFinite(tabindex)) return tabindex >= 0;
+    }
+    if (tag === 'A') return Boolean(el.getAttribute('href'));
+    if (['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return true;
+    if (el.hasAttribute('contenteditable')) return true;
+    return false;
+  }
+
+  function hasAccessibleName(el) {
+    if (!el) return false;
+    const ariaLabel = (el.getAttribute('aria-label') || '').trim();
+    if (ariaLabel) return true;
+    const labelledBy = (el.getAttribute('aria-labelledby') || '').trim();
+    if (labelledBy) {
+      const hasRefText = labelledBy.split(/\s+/).some(id => {
+        const ref = document.getElementById(id);
+        return Boolean(ref && (ref.textContent || '').trim());
+      });
+      if (hasRefText) return true;
+    }
+    const ownText = (el.textContent || '').trim();
+    if (ownText) return true;
+    const value = (el.getAttribute('value') || '').trim();
+    return Boolean(value);
+  }
+
+  function hasSemanticRole(el) {
+    return Boolean((el.getAttribute('role') || '').trim());
+  }
+
+  function isSemanticallyInteractive(el) {
+    const tag = el.tagName;
+    if (tag === 'A' && el.hasAttribute('href')) return true;
+    return ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY', 'DETAILS'].includes(tag);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -481,6 +694,11 @@
     auditLinks();
     auditViewportZoom();
     auditARIA();
+    auditKeyboardNavigation();
+    auditButtonAccessibility();
+    auditTables();
+    auditClickableSemantics();
+    auditSkipLink();
 
     const errors   = issues.filter(i => i.type === 'error').length;
     const warnings = issues.filter(i => i.type === 'warning').length;
